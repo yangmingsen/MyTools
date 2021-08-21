@@ -31,13 +31,17 @@ func recvFile(conn net.Conn, fileName string) {
 	defer conn.Close()
 }
 
+// 获取单个ip地址，具有固定性。 容易出错
 func getLocalIpv4() string {
 	addrs, err := net.InterfaceAddrs() //获取所有ip地址, 包含ipv4,ipv6
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(addrs)
+	//fmt.Println(addrs)
+	for _, addr := range addrs {
+		fmt.Println(addr)
+	}
 
 	ipv4Addr := addrs[1].String()
 	split := strings.Split(ipv4Addr, "/")
@@ -45,22 +49,57 @@ func getLocalIpv4() string {
 	return split[0]
 }
 
-func main() {
-	listenIp := getLocalIpv4()
-	listenIp += ":8848"
-
-	fmt.Println("server runing in ", listenIp)
-
-	//监听ip
-	listener, err0 := net.Listen("tcp", listenIp)
-	if err0 != nil {
-		fmt.Println(" net.Listen err0:", err0)
-		return
+// 获取所有ipv4绑定列表
+func getLocalIpv4List() []string {
+	addrs, err := net.InterfaceAddrs() //获取所有ip地址, 包含ipv4,ipv6
+	if err != nil {
+		panic(err)
 	}
-	defer listener.Close()
 
-	handleRecvFile(listener)
+	//addrsLen := len(addrs);
 
+	res := make([]string, 0)
+
+	//fmt.Println(addrs)
+	for _, addr := range addrs {
+		//fmt.Println(addr)
+		ip := addr.String()
+		contains := strings.Contains(ip, ".")
+		if contains {
+			res = append(res, strings.Split(ip, "/")[0])
+		}
+	}
+	fmt.Println(res)
+	return res
+}
+
+func main() {
+	listenIp := getLocalIpv4List()
+
+	var bindIp net.Listener
+	var err0 error
+	for _, theIp := range listenIp {
+		fmt.Println("ip=" + theIp)
+		bindIp, err0 = net.Listen("tcp", theIp+":8848")
+		if err0 == nil {
+			goto goThe
+		} else {
+			fmt.Println("ip: ", theIp, " Can't bind, Go next!")
+		}
+	}
+
+goThe:
+	{
+		if err0 != nil {
+			panic(err0)
+			return
+		}
+		fmt.Println("server Successful runing in ", bindIp.Addr().String())
+	}
+
+	defer bindIp.Close()
+
+	handleRecvFile(bindIp)
 }
 
 const (
@@ -136,46 +175,5 @@ func handleRecvFile(listener net.Listener) {
 	}
 
 	wg.Wait()
-
-}
-
-//弃用
-func main1() {
-
-	listenIp := getLocalIpv4()
-	listenIp += ":8848"
-
-	fmt.Println("server runing in ", listenIp)
-
-	//监听ip
-	listener, err0 := net.Listen("tcp", listenIp)
-	if err0 != nil {
-		fmt.Println(" net.Listen err0:", err0)
-		return
-	}
-	defer listener.Close()
-
-	//阻塞监听client connection
-	conn, err1 := listener.Accept()
-	if err1 != nil {
-		fmt.Println("listener.Accept() err1:", err1)
-		return
-	}
-	defer conn.Close()
-
-	//获取client 发送的文件名
-	buf := make([]byte, 4096)
-	n, err2 := conn.Read(buf)
-	if err2 != nil {
-		fmt.Println("conn.Read(buf) err2:", err2)
-		return
-	}
-
-	//获取
-	fileName := string(buf[:n])
-	conn.Write([]byte("ok"))
-
-	//接收文件
-	recvFile(conn, fileName)
 
 }
