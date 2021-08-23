@@ -111,7 +111,7 @@ func main() {
 	args := os.Args
 
 	if len(args) != 3 {
-		fmt.Println("args error")
+		fmt.Println("args format must be => ydect sendIp resource")
 		return
 	}
 
