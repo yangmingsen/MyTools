@@ -77,32 +77,15 @@ func doDetect(detectCondition string, listenIP string) {
 
 func main() {
 	args := os.Args
-
-	listenIp := getLocalIpv4List()
-	ipLen := len(listenIp)
-	if ipLen == 0 {
-		fmt.Println("Not available Ip Address to bind")
+	if len(args) != 3 {
+		fmt.Println("format must be => ydect ListenIp DetectIP")
 		return
 	}
 
-	var bindIp net.Listener
-	var err0 error
-	for _, theIp := range listenIp {
-		//fmt.Println("ip=" + theIp)
-		bindIp, err0 = net.Listen("tcp", theIp+":8848")
-		if err0 == nil {
-			break
-		} else {
-			fmt.Println("ip: ", theIp, " Can't bind, Go next!")
-		}
-	}
+	listenIp := args[1]
+	detectIp := args[2]
 
-	listenIp1 := bindIp.Addr().String()
-
-	detectIp := args[1]
-	reallyListenIP := strings.Split(listenIp1, ":")[0]
-
-	nr := parseUdpFormat(reallyListenIP)
+	nr := parseUdpFormat(listenIp)
 
 	listen, err0 := net.ListenUDP("udp", &net.UDPAddr{
 		IP:   net.IPv4(nr[0], nr[1], nr[2], nr[3]),
@@ -113,15 +96,16 @@ func main() {
 		panic(err0)
 		os.Exit(-1)
 	}
-	fmt.Println("detect recv server running in " + listenIp1)
+	fmt.Println("detect recv server running in " + listenIp)
 
 	defer listen.Close()
 
 	//do udp fun
 	wg.Add(1)
+	//接收文件
 	go func() {
 		defer wg.Done()
-		doDetect(detectIp, reallyListenIP) //detectip
+		doDetect(detectIp, listenIp) //detectip
 	}()
 
 	for {
