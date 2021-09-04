@@ -289,17 +289,7 @@ func syncFile(fileList []CFileInfo) {
 
 }
 
-func main() {
-	args := os.Args
-	argLen := len(args)
-	fmt.Println(args)
-	if argLen != 3 {
-		fmt.Println("argError, maybe => yrecv2 remoteIP ./resouces")
-	}
-	remoteIp = args[1]
-	path := args[2]
-	//remotePort = "9949"
-
+func doSendMutliFile(path string) {
 	fileList, err := getFileList(path)
 	if err != nil {
 		panic(err)
@@ -322,5 +312,20 @@ func main() {
 
 	wg.Wait()
 	fmt.Println("同步文件完毕...目录数", len(fList))
+
+}
+
+func main() {
+	args := os.Args
+	argLen := len(args)
+	fmt.Println(args)
+	if argLen != 3 {
+		fmt.Println("argError, maybe => yrecv2 remoteIP ./resouces")
+	}
+	remoteIp = args[1]
+	path := args[2]
+	//remotePort = "9949"
+
+	doSendMutliFile(path)
 
 }
