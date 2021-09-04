@@ -167,6 +167,37 @@ func listenUDP(ip string) {
 
 }
 
+func doCreateServer() net.Listener {
+	listenIp := getLocalIpv4List()
+	ipLen := len(listenIp)
+	if ipLen == 0 {
+		fmt.Println("Not available Ip Address to bind")
+		return nil
+	}
+
+	var bindIp net.Listener
+	var err0 error
+
+	for _, theIp := range listenIp {
+		//fmt.Println("ip=" + theIp)
+		bindIp, err0 = net.Listen("tcp", theIp+":8848")
+		if err0 == nil {
+			break
+		} else {
+			fmt.Println("ip: ", theIp, " Can't bind, Go next!")
+		}
+	}
+
+	if err0 != nil {
+		panic(err0)
+		return nil
+	}
+	ipStr := bindIp.Addr().String()
+	fmt.Println("server Successful runing in ", ipStr)
+
+	return bindIp
+}
+
 func main() {
 	//用于参数传递
 	//args := os.Args

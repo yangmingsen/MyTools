@@ -8,13 +8,6 @@ import (
 	"strings"
 )
 
-const (
-	SizeB  int64 = 1024
-	SizeKB int64 = 1048576
-	SizeMB int64 = 1073741824
-	SizeGB int64 = 1099511627776
-)
-
 func getClientIp() (string, error) {
 	addrs, err := net.InterfaceAddrs()
 
