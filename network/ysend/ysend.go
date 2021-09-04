@@ -76,11 +76,11 @@ func sendProgressBar() {
 		c = a
 
 		if d < float64(SizeB) {
-			fmt.Printf("/r平均(%.2fB/s), ", d)
+			fmt.Printf("\r平均(%.2fB/s), ", d)
 		} else if d < float64(SizeKB) {
-			fmt.Printf("/r平均(%.2fKB/s), ", d/1024)
+			fmt.Printf("\r平均(%.2fKB/s), ", d/1024)
 		} else if d < float64(SizeMB) {
-			fmt.Printf("/r平均(%.2fMB/s), ", d/1024/1024)
+			fmt.Printf("\r平均(%.2fMB/s), ", d/1024/1024)
 		}
 
 		switch sizeChoose {
@@ -291,9 +291,10 @@ func syncDir(dirList []CFileInfo) {
 	}
 
 	//向服务器发起请求
-	conn, err1 := net.Dial("tcp", remoteIp+":"+remotePort)
+	connectIP := (remoteIp + ":" + remotePort)
+	conn, err1 := net.Dial("tcp", connectIP)
 	if err1 != nil {
-		fmt.Println("远程服务连接失败")
+		fmt.Println("远程服务连接[", connectIP, "]失败")
 		panic(err1)
 		os.Exit(-1)
 	}
@@ -367,9 +368,10 @@ func syncFile(fileList []CFileInfo) {
 			defer wg.Done()
 
 			//向服务器发起请求
-			conn, err1 := net.Dial("tcp", remoteIp+":"+remotePort)
+			connectIP := (remoteIp + ":" + remotePort)
+			conn, err1 := net.Dial("tcp", connectIP)
 			if err1 != nil {
-				fmt.Println("远程服务连接失败")
+				fmt.Println("远程服务[", connectIP, "]连接失败")
 				panic(err1)
 				os.Exit(-1)
 			}
@@ -501,7 +503,7 @@ func main() {
 	} else if argLen >= 4 {
 		doWhat := args[1]
 		if doWhat == "-m" {
-			remotePort = args[2]
+			remoteIp = args[2]
 			sendPath := args[3]
 
 			if argLen == 5 {
