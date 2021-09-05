@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 //单文件变量
@@ -17,6 +18,13 @@ const (
 	SizeKB int64 = 1048576
 	SizeMB int64 = 1073741824
 	SizeGB int64 = 1099511627776
+)
+
+const (
+	B  = 1
+	KB = 2
+	MB = 3
+	GB = 4
 )
 
 //多文件变量
@@ -83,9 +91,77 @@ func getLocalIpv4List() []string {
 	return res
 }
 
+func showSingleBar(current *int64, total int64) {
+	defer wg.Done()
+
+	last := int64(0)
+	avgShow := -1
+
+	//显示条选择
+	if total < SizeB {
+		avgShow = B
+	} else if total < SizeKB {
+		avgShow = KB
+	} else if total < SizeMB {
+		avgShow = MB
+	} else if total < SizeGB {
+		avgShow = GB
+	}
+
+	for {
+		var bar = ""
+		//获取本次长度
+		tmpLen := *current - last
+		//保存上次结果
+		last = *current
+
+		percent := (float64(*current) / float64(total)) * float64(100)
+		for i := 0; i < int(percent)/2; i++ {
+			bar += "#"
+		}
+		fmt.Printf("\r总进度[%-50s]", bar)
+
+		a := float64(*current)
+		b := float64(total)
+
+		switch avgShow {
+		case B:
+			fmt.Printf("%.2f%%, %.0fB => %.0fB,", (a/b)*100, a, b)
+		case KB:
+			fmt.Printf("%.2f%%, %.2fKB => %.2fKB,", (a/b)*100, a/1024, b/1024)
+		case MB:
+			fmt.Printf("%.2f%%, %.2fMB => %.2fMB,", (a/b)*100, a/1024/1024, b/1024/1024)
+		case GB:
+			fmt.Printf("%.2f%%, %.2fGB => %.2fGB,", (a/b)*100, a/1024/1024/1024, b/1024/1024/1024)
+		}
+
+		d := float64(tmpLen)
+		if d < float64(SizeB) {
+			fmt.Printf(" 平均(%.2fB/s)", d)
+		} else if d < float64(SizeKB) {
+			fmt.Printf(" 平均(%.2fKB/s)", d/1024)
+		} else if d < float64(SizeMB) {
+			fmt.Printf(" 平均(%.2fMB/s)", d/1024/1024)
+		}
+
+		if *current >= total {
+			fmt.Println("接收完毕")
+			break
+		}
+		time.Sleep(1 * time.Second)
+
+	}
+
+}
+
 //单文件函数
 //***********************************************************************
-func recvFile(conn net.Conn, fileName string) {
+func recvFile(conn net.Conn, fileName string, fileSize int64) {
+	current := int64(0)
+
+	wg.Add(1)
+	go showSingleBar(&current, fileSize)
+
 	file, err0 := os.Create(fileName)
 	if err0 != nil {
 		fmt.Println("os.Create(fileName) err0:", err0)
@@ -96,8 +172,9 @@ func recvFile(conn net.Conn, fileName string) {
 	buf := make([]byte, 4096)
 	for {
 		n, _ := conn.Read(buf)
-		if n == 0 {
-			fmt.Println("接收文件 ", fileName, " 完成")
+		current += int64(n)
+		if n == 0 || current == fileSize {
+			//fmt.Println("接收文件 ", fileName, " 完成")
 			return
 		}
 
@@ -260,7 +337,7 @@ func handleRecvFile(listener net.Listener) {
 			//接收文件
 			go func() {
 				defer wg.Done()
-				recvFile(conn, fileName)
+				recvFile(conn, fileName, recvFileSizeInt64)
 			}()
 
 		} else {
