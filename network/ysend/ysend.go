@@ -548,14 +548,14 @@ func main() {
 	argLen := len(args)
 
 	if argLen == 3 {
-		filePath := args[2]
-		targetIp := args[1] + ":8848"
+		filePath := args[1]
+		targetIp := args[2] + ":8848"
 		parseSingleFileInfo(filePath, targetIp)
 	} else if argLen >= 4 {
 		doWhat := args[1]
 		if doWhat == "-r" {
-			remoteIp = args[2]
-			sendPath := args[3]
+			remoteIp = args[3]
+			sendPath := args[2]
 
 			if argLen == 5 {
 				num, _ := strconv.Atoi(args[4])
@@ -565,12 +565,12 @@ func main() {
 			doSendMutliFile(sendPath)
 
 		} else {
-			fmt.Println("args format must be => ysend -r 目标ip地址 文件夹 [goroutine数]")
+			fmt.Println("args format must be => ysend -r 文件夹 目标ip地址 [goroutine数]")
 		}
 
 	} else {
-		fmt.Println("args format must be => ysend 目标ip地址 文件")
-		fmt.Println("args format must be => ysend -r 目标ip地址 文件夹 [goroutine数]")
+		fmt.Println("args format must be => ysend 文件 目标ip地址")
+		fmt.Println("args format must be => ysend -r 文件夹 目标ip地址 [goroutine数]")
 	}
 
 }
