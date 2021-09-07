@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strconv"
@@ -36,6 +37,14 @@ type CFileInfo struct {
 	Path  string `json:"path"`
 }
 
+type ResponseInfo struct {
+	Ok      bool   `json:"ok"`
+	Message string `json:"message"`
+
+	//用于自定义通信规则时使用 其他不用是 传 OK
+	Status string `json:"status"`
+}
+
 var mutilFilePort string
 var filePort string
 
@@ -52,6 +61,34 @@ var wg sync.WaitGroup
 
 //公共函数
 //**********************************************************************
+
+func parseCFileInfoToJsonStr(info CFileInfo) string {
+	bytes, _ := json.Marshal(info)
+	return string(bytes)
+}
+
+func parseStrToCFileInfo(str string) CFileInfo {
+	return parseByteToCFileInfo([]byte(str))
+}
+
+func parseByteToCFileInfo(bytes []byte) CFileInfo {
+	var result CFileInfo
+
+	json.Unmarshal(bytes, &result)
+	return result
+}
+
+func parseResponseToJsonStr(res ResponseInfo) string {
+	bytes, _ := json.Marshal(res)
+	return string(bytes)
+}
+
+func parseByteToResponseInfo(bytes []byte) ResponseInfo {
+	var result ResponseInfo
+
+	json.Unmarshal(bytes, &result)
+	return result
+}
 
 func isIncludeIP(ip string) bool {
 	excludeList := [...]string{"127", "local"}
@@ -157,6 +194,8 @@ func showSingleBar(current *int64, total int64) {
 //单文件函数
 //***********************************************************************
 func recvFile(conn net.Conn, fileName string, fileSize int64) {
+	defer conn.Close()
+
 	current := int64(0)
 
 	wg.Add(1)
@@ -173,15 +212,16 @@ func recvFile(conn net.Conn, fileName string, fileSize int64) {
 	for {
 		n, _ := conn.Read(buf)
 		current += int64(n)
-		if n == 0 || current == fileSize {
-			//fmt.Println("接收文件 ", fileName, " 完成")
-			return
-		}
 
 		file.Write(buf[:n])
+
+		if current == fileSize {
+			//fmt.Println("接收文件 ", fileName, " 完成")
+			break
+		}
+
 	}
 
-	defer conn.Close()
 }
 
 // 获取单个ip地址，具有固定性。 容易出错
@@ -422,31 +462,15 @@ func replaceSeparator(path string) string {
 }
 
 // exists returns whether the given file or directory exists or not
-func fileExists(path string) (bool, error) {
-	_, err := os.Stat(path)
+func fileExists(path string) (bool, os.FileInfo, error) {
+	f, err := os.Stat(path)
 	if err == nil {
-		return true, nil
+		return true, f, nil
 	}
 	if os.IsNotExist(err) {
-		return false, nil
+		return false, nil, nil
 	}
-	return true, err
-}
-
-func parseToJsonStr(info CFileInfo) string {
-	bytes, _ := json.Marshal(info)
-	return string(bytes)
-}
-
-func parseStrToCFileInfo(str string) CFileInfo {
-	return parseByteToCFileInfo([]byte(str))
-}
-
-func parseByteToCFileInfo(bytes []byte) CFileInfo {
-	var result CFileInfo
-
-	json.Unmarshal(bytes, &result)
-	return result
+	return true, f, err
 }
 
 // 处理目录建立
@@ -454,8 +478,8 @@ func doDirHandler(conn net.Conn) {
 	defer wg.Done()
 
 	rcvMsg := readMsg(conn)
-
-	writeMsg(conn, "收到目录数据")
+	response := ResponseInfo{Ok: true, Message: "收到目录数据", Status: "Ok"}
+	writeMsg(conn, parseResponseToJsonStr(response))
 
 	pathArr := strings.Split(rcvMsg, "\n")
 	for _, path := range pathArr {
@@ -463,9 +487,20 @@ func doDirHandler(conn net.Conn) {
 		// os.MkdirAll("dir1/dir2/dir3", os.ModePerm)   //创建多级目录
 		err := os.MkdirAll(replaceSeparator(path), os.ModePerm)
 		if err != nil {
+			response.Ok = false
+			response.Message = err.Error()
+			writeMsg(conn, parseResponseToJsonStr(response))
 			fmt.Println("创建目录失败【"+path+"】", err)
 		}
 	}
+
+	response.Ok = true
+	response.Message = "目录建立完毕...."
+	writeMsg(conn, parseResponseToJsonStr(response))
+
+	//关闭连接
+	conn.Close()
+
 	fmt.Println("目录建立完毕....")
 }
 
@@ -475,33 +510,66 @@ func doFileHandler(conn net.Conn) {
 
 	for {
 		//接收文件传输标志
+		//可能是 s 或 c
+		// 如果是c 表示结束传输
 		rcvMsg := readMsg(conn)
 		if rcvMsg == "c" {
 			fmt.Println("Client传输完毕")
 			break
 		}
 
-		//接收文件信息
+		//接收文件信息 fileInfo
 		fileInfo := parseStrToCFileInfo(readMsg(conn))
-		//响应收到信息
-		exists, _ := fileExists(fileInfo.Path)
-		if exists { //存在不传
-			writeMsg(conn, "no")
-			continue
-		} else {
-			writeMsg(conn, "ok")
-		}
 
 		//转换path
 		filePath := replaceSeparator(fileInfo.Path)
+
+		//响应检查信息
+		var response = ResponseInfo{Ok: true, Message: "", Status: "Ok"}
+		exists, finfo, _ := fileExists(filePath)
+		if exists { //如果存在
+			if finfo.Size() != fileInfo.Size {
+				//如果文件大小不一致 也得重传
+				err := os.Remove(filePath) //删除错误文件
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				serverSize := strconv.FormatInt(finfo.Size(), 10)
+				clientSize := strconv.FormatInt(fileInfo.Size, 10)
+				response.Message = "文件【" + filePath + "】:" + "远程Server文件【" + serverSize + "】与本地文件【" + clientSize + "】大小不一致准备重传. "
+				response.Status = "diffSize"
+
+				writeMsg(conn, parseResponseToJsonStr(response))
+
+			} else { //否则 存在不传
+
+				response.Status = "Exist"
+				response.Message = "远程文件【" + filePath + "】存在, 不传."
+
+				writeMsg(conn, parseResponseToJsonStr(response))
+				continue
+			}
+
+		} else {
+			// 可以传送
+			writeMsg(conn, parseResponseToJsonStr(response))
+		}
+
+		//建立文件
 		file, err0 := os.Create(filePath)
 		defer file.Close()
 		if err0 != nil {
-			fmt.Println("创建本地文件["+filePath+"]失败:", err0)
-			writeMsg(conn, "continue")
+			response.Ok = false
+			response.Message = "接收方创建文件【" + filePath + "】失败:" + err0.Error()
+			response.Status = "Ok"
+
+			writeMsg(conn, parseResponseToJsonStr(response))
 			continue
 		} else {
-			writeMsg(conn, "next")
+			response.Ok = true
+			response.Message = "Ok"
+			writeMsg(conn, parseResponseToJsonStr(response))
 		}
 
 		if fileInfo.Size != 0 {
@@ -520,9 +588,11 @@ func doFileHandler(conn net.Conn) {
 		}
 		//关闭文件
 		file.Close()
-		fmt.Println("文件【"+filePath+"】接收完毕，大小【", fileInfo.Size, "】")
+		fmt.Println("文件【"+filePath+"】接收完毕，大小【", fileInfo.Size, "B】")
 
-		writeMsg(conn, "ok2")
+		response.Ok = true
+		response.Message = "Ok"
+		writeMsg(conn, parseResponseToJsonStr(response))
 
 	}
 	conn.Close()

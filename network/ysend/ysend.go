@@ -44,6 +44,12 @@ type CFileInfo struct {
 	Path  string `json:"path"`
 }
 
+type ResponseInfo struct {
+	Ok      bool   `json:"ok"`
+	Message string `json:"message"`
+	Status  string `json:"status"`
+}
+
 var remoteIp string
 var remotePort string
 var goroutineNum int
@@ -62,6 +68,38 @@ func init() {
 	goroutineNum = 1
 	totalFileNum = 0
 	finishFileNum = 0
+}
+
+func parseCFileInfoToJsonStr(info CFileInfo) string {
+	bytes, _ := json.Marshal(info)
+	return string(bytes)
+}
+
+func parseStrToCFileInfo(str string) CFileInfo {
+	return parseByteToCFileInfo([]byte(str))
+}
+
+func parseByteToCFileInfo(bytes []byte) CFileInfo {
+	var result CFileInfo
+
+	json.Unmarshal(bytes, &result)
+	return result
+}
+
+func parseResponseToJsonStr(res ResponseInfo) string {
+	bytes, _ := json.Marshal(res)
+	return string(bytes)
+}
+
+func parseStrToResponseInfo(str string) ResponseInfo {
+	return parseByteToResponseInfo([]byte(str))
+}
+
+func parseByteToResponseInfo(bytes []byte) ResponseInfo {
+	var result ResponseInfo
+
+	json.Unmarshal(bytes, &result)
+	return result
 }
 
 //单文件函数
@@ -107,6 +145,7 @@ func sendProgressBar() {
 func sendFile(conn net.Conn, filePath string) {
 
 	file, err0 := os.Open(filePath)
+	fStat, _ := file.Stat()
 
 	go sendProgressBar()
 
@@ -120,27 +159,33 @@ func sendFile(conn net.Conn, filePath string) {
 	nowSize = 0 //当前下载位置
 
 	buf := make([]byte, 4096)
+
+	//test
+
 	for {
 		n, err1 := file.Read(buf)
+
 		nowSize += int64(n)
 		a = float64(nowSize) //更新a值
 
+		_, err2 := conn.Write(buf[:n])
+
 		if err1 != nil {
 			if err1 == io.EOF {
-				//fmt.Println("send file ok!")
+				fmt.Println("send file ok! FileSize=", fStat.Size(), "   NowSize=", nowSize)
 			} else {
 				fmt.Println("file.Read err1:", err1)
 			}
 
-			return
+			break
 		}
 
-		_, err2 := conn.Write(buf[:n])
 		if err2 != nil {
 			fmt.Println("conn.Write err2:", err2)
-			return
+			break
 		}
 	}
+
 }
 
 // filePath 文件路径 格式为 some.zip or some1.txt
@@ -265,18 +310,6 @@ func readMsg(conn net.Conn) string {
 
 }
 
-func parseToJsonStr(info CFileInfo) string {
-	bytes, _ := json.Marshal(info)
-	return string(bytes)
-}
-
-func parseByteToCFileInfo(bytes []byte) CFileInfo {
-	var result CFileInfo
-
-	json.Unmarshal(bytes, &result)
-	return result
-}
-
 //同步文件夹
 func syncDir(dirList []CFileInfo) {
 
@@ -294,7 +327,7 @@ func syncDir(dirList []CFileInfo) {
 	connectIP := (remoteIp + ":" + remotePort)
 	conn, err1 := net.Dial("tcp", connectIP)
 	if err1 != nil {
-		fmt.Println("远程服务连接[", connectIP, "]失败")
+		fmt.Println("远程服务连接【", connectIP, "】失败")
 		panic(err1)
 		os.Exit(-1)
 	}
@@ -303,15 +336,25 @@ func syncDir(dirList []CFileInfo) {
 
 	ok := writeMsg(conn, sendMsgStr)
 	if ok == false {
+		fmt.Println("发送目录数据失败【退出】")
 		panic(err1)
 		os.Exit(-2)
 	}
 
-	rcvMsg := readMsg(conn)
-	fmt.Println("收到服务服务响应：" + rcvMsg)
+	response := parseStrToResponseInfo(readMsg(conn))
+	fmt.Println("收到对方服务响应：【" + response.Message + "】")
+
+	for {
+		response = parseStrToResponseInfo(readMsg(conn))
+		if response.Ok == true {
+			break
+		} else {
+			fmt.Println("对方无法建立目录数据【" + response.Message + "】")
+		}
+	}
+	fmt.Println("同步目录数据结束...")
 
 	defer conn.Close()
-
 }
 
 //显示文件传输进度条
@@ -378,6 +421,7 @@ func syncFile(fileList []CFileInfo) {
 
 			//发送传输请求
 			writeMsg(conn, "f")
+
 			for {
 				tLen := len(taskNum)
 				if tLen == 0 { //这意味着没有文件可以传输了
@@ -389,21 +433,27 @@ func syncFile(fileList []CFileInfo) {
 				//获取传输任务
 				task, _ := <-taskNum
 
-				//发送开始传输请求
+				//发送开始传输请求【s】标志
 				writeMsg(conn, "s")
 
-				//发送文件信息
-				writeMsg(conn, parseToJsonStr(task))
+				//发送文件信息 fileInfo
+				writeMsg(conn, parseCFileInfoToJsonStr(task))
 
-				//读取服务响应
-				rcvMsg := readMsg(conn)
-				if rcvMsg == "no" { //存在 不传
+				//读取服务响应 检查信息
+				response := parseStrToResponseInfo(readMsg(conn))
+				if response.Status == "Exist" { //存在 不传
+					//任务完成+1
+					atomic.AddInt32(&finishFileNum, 1)
+					fmt.Println(response.Message)
 					continue
+				} else if response.Status == "diffSize" {
+					fmt.Println(response.Message)
 				}
 
-				rcvMsg = readMsg(conn)
-				if rcvMsg == "continue" {
-					fmt.Println("远程Server创建文件失败."+"文件【", task.Path, "】传输失败")
+				//读取接收方 建立文件信息
+				response = parseStrToResponseInfo(readMsg(conn))
+				if response.Ok == false { //mean 没有成功
+					fmt.Println(response.Message)
 					continue
 				}
 
@@ -424,6 +474,8 @@ func syncFile(fileList []CFileInfo) {
 						rLen, err1 := file.Read(buf)
 						current += int64(rLen)
 
+						_, err2 := conn.Write(buf[:rLen])
+
 						if err1 != nil {
 							if err1 == io.EOF {
 								break
@@ -432,7 +484,6 @@ func syncFile(fileList []CFileInfo) {
 							}
 						}
 
-						_, err2 := conn.Write(buf[:rLen])
 						if err2 != nil {
 							fmt.Println("向服务器发送文件数据错误:", err2)
 							break
@@ -452,7 +503,7 @@ func syncFile(fileList []CFileInfo) {
 				atomic.AddInt32(&finishFileNum, 1)
 
 				//接收服务响应完成
-				rcvMsg = readMsg(conn)
+				response = parseStrToResponseInfo(readMsg(conn))
 				//fmt.Println("接收到Server传输文件" + task.Path + "完成响应：" + rcvMsg)
 				//fmt.Println()
 
@@ -488,7 +539,7 @@ func doSendMutliFile(path string) {
 	syncFile(fList)
 
 	wg.Wait()
-	fmt.Println("同步文件完毕...目录数", len(fList))
+	fmt.Println("同步文件完毕...文件数", len(fList))
 
 }
 
