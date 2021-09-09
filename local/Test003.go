@@ -139,7 +139,11 @@ var wg sync.WaitGroup
 func main() {
 
 	totalInt := 1000
+	bT := time.Now() // 开始时间
 
+	eT := time.Since(bT) // 从开始到当前所消耗的时间
+
+	fmt.Println("Run time: ", eT)
 	cur := int64(0)
 	total := int64(totalInt)
 

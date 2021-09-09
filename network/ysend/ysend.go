@@ -245,7 +245,6 @@ func parseSingleFileInfo(filePath string, targetIp string) {
 		fmt.Println("对方同意接受您的文件,正在发送中....")
 		wg.Add(1) //一个 go 等待
 		sendFile(conn, filePath)
-		wg.Wait()
 	} else {
 		fmt.Println("对方拒绝了您的发送文件")
 	}
@@ -361,6 +360,7 @@ func syncDir(dirList []CFileInfo) {
 func showSyncFileBar() {
 	defer wg.Done()
 
+	nowTime := time.Now()
 	var last = int32(0)
 	var total = totalFileNum
 	for {
@@ -376,6 +376,8 @@ func showSyncFileBar() {
 		fmt.Printf("\r总进度[%-50s] => %.2f%% => %d个文件/s", bar, percent, tNum)
 		if current >= total {
 			fmt.Println()
+			fmt.Println("同步文件完毕...文件数【", total, "】")
+			fmt.Println("耗时:%v", time.Since(nowTime))
 			break
 		}
 
@@ -538,8 +540,7 @@ func doSendMutliFile(path string) {
 	fmt.Println("同步目录完毕...目录数", len(dirList))
 	syncFile(fList)
 
-	wg.Wait()
-	fmt.Println("同步文件完毕...文件数", len(fList))
+	//fmt.Println("同步文件完毕...文件数", len(fList))
 
 }
 
@@ -573,4 +574,5 @@ func main() {
 		fmt.Println("args format must be => ysend -r 文件夹 目标ip地址 [goroutine数]")
 	}
 
+	wg.Wait()
 }
