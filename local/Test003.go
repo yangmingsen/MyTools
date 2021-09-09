@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -136,7 +137,7 @@ func doBar(cur *int64, total int64) {
 
 var wg sync.WaitGroup
 
-func main() {
+func main21() {
 
 	totalInt := 1000
 	bT := time.Now() // 开始时间
@@ -158,4 +159,36 @@ func main() {
 	}
 
 	wg.Wait()
+}
+
+func decimal(value float64) float64 {
+	value, _ = strconv.ParseFloat(fmt.Sprintf("%.2f", value), 64)
+	return value
+}
+
+//可读化文件大小
+func fileSizeReadable(fileSize int64) string {
+	var sizeStr string
+	//显示条选择
+	if fileSize < SizeB {
+		sizeStr = strconv.FormatInt(fileSize, 10)
+		sizeStr += " B"
+	} else if fileSize < SizeKB {
+		value := float64(fileSize) / float64(1024)
+		sizeStr += fmt.Sprintf("%.2f KB", value)
+	} else if fileSize < SizeMB {
+		value := float64(fileSize) / float64(1024*1024)
+		sizeStr += fmt.Sprintf("%.2f MB", value)
+	} else if fileSize < SizeGB {
+		value := float64(fileSize) / float64(1024*1024*1024)
+		sizeStr += fmt.Sprintf("%.2f GB", value)
+	}
+	return sizeStr
+}
+
+func main() {
+	fmt.Println(fileSizeReadable(int64(712)))
+	fmt.Println(fileSizeReadable(int64(2712)))
+	fmt.Println(fileSizeReadable(int64(6102712)))
+	fmt.Println(fileSizeReadable(int64(2126102712)))
 }

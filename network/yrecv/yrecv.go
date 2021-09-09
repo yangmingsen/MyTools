@@ -46,13 +46,15 @@ type ResponseInfo struct {
 }
 
 var mutilFilePort string
-var filePort string
+var singleFilePort string
+var detectPort int
 
 const msgCloseFlag = "\r"
 
 func init() {
 	mutilFilePort = "9949"
-	filePort = "8848"
+	singleFilePort = "8848"
+	detectPort = 8850
 }
 
 //public变量
@@ -266,21 +268,60 @@ func parseUdpFormat(ip string) []byte {
 
 //udp fun
 func listenUDP(ip string) {
-	splitStr := strings.Split(ip, ":")
-	ipStr := splitStr[0]
-	//port  := splitStr[1];
-	//intPort, _ := strconv.Atoi(port)
-	nr := parseUdpFormat(ipStr)
 
-	listen, err0 := net.ListenUDP("udp", &net.UDPAddr{
-		IP:   net.IPv4(nr[0], nr[1], nr[2], nr[3]),
-		Port: 8849, //port + 1 => 8849
-	})
-	if err0 != nil {
-		fmt.Println("UDP建立失败")
-		panic(err0)
-		return
+	var listen *net.UDPConn
+	var err0 error
+	var nr []byte
+	var ipStr string
+
+	if ip != "nil" {
+		if strings.Contains(ip, ":") {
+			splitStr := strings.Split(ip, ":")
+			ipStr = splitStr[0]
+		}
+
+		nr = parseUdpFormat(ipStr)
+
+		listen, err0 = net.ListenUDP("udp", &net.UDPAddr{
+			IP:   net.IPv4(nr[0], nr[1], nr[2], nr[3]),
+			Port: detectPort, //port + 1 => 8849
+		})
+		if err0 != nil {
+			fmt.Println("UDP建立失败【", err0, "】")
+			return
+		}
+
+	} else {
+		listenIp := getLocalIpv4List()
+		ipLen := len(listenIp)
+		if ipLen == 0 {
+			fmt.Println("Not available Ip Address for UdpServer bind...")
+			return
+		}
+
+		ok := false
+		for _, theIp := range listenIp {
+			nr = parseUdpFormat(theIp)
+
+			listen, err0 = net.ListenUDP("udp", &net.UDPAddr{
+				IP:   net.IPv4(nr[0], nr[1], nr[2], nr[3]),
+				Port: detectPort, //port + 1 => 8849
+			})
+			if err0 != nil {
+				fmt.Println("ip: ", theIp, " Can't bind, [", err0, "]")
+			} else {
+				ipStr = theIp
+				ok = true
+				break
+			}
+
+		}
+		if ok == false {
+			return
+		}
+
 	}
+
 	fmt.Println("DServer Successful running in  " + ipStr + ":8849")
 
 	defer listen.Close()
@@ -409,33 +450,14 @@ func doCreateServer(port string) net.Listener {
 		return nil
 	}
 
-	//var bindIp net.Listener
-	//var err0 error
-
 	for _, theIp := range listenIp {
-		//fmt.Println("ip=" + theIp)
-
 		bindServer := doBindServer(theIp, port)
 		if bindServer != nil {
 			return bindServer
 		}
-		//bindIp, err0 = net.Listen("tcp", theIp+":"+port)
-		//if err0 == nil {
-		//	break
-		//} else {
-		//	fmt.Println("ip: ", theIp, " Can't bind, Go next!")
-		//}
 	}
-	return nil
 
-	//if err0 != nil {
-	//	panic(err0)
-	//	return nil
-	//}
-	//ipStr := bindIp.Addr().String()
-	//fmt.Println("server Successful runing in ", ipStr)
-	//
-	//return bindIp
+	return nil
 }
 
 //发送数据
@@ -551,9 +573,9 @@ func doFileHandler(conn net.Conn) {
 					log.Fatal(err)
 				}
 
-				serverSize := strconv.FormatInt(finfo.Size(), 10)
-				clientSize := strconv.FormatInt(fileInfo.Size, 10)
-				response.Message = "文件【" + filePath + "】:" + "远程Server文件【" + serverSize + "】与本地文件【" + clientSize + "】大小不一致准备重传. "
+				//serverSize := strconv.FormatInt(finfo.Size(), 10)
+				//clientSize := strconv.FormatInt(fileInfo.Size, 10)
+				response.Message = "接收方文件【" + filePath + "】:" + "大小【" + fileSizeReadable(finfo.Size()) + "】与本地文件【" + fileSizeReadable(fileInfo.Size) + "】大小不一致准备重传. "
 				response.Status = "diffSize"
 
 				writeMsg(conn, parseResponseToJsonStr(response))
@@ -561,7 +583,7 @@ func doFileHandler(conn net.Conn) {
 			} else { //否则 存在不传
 
 				response.Status = "Exist"
-				response.Message = "远程文件【" + filePath + "】存在, 不传."
+				response.Message = "接收方文件【" + filePath + "】存在, 不传."
 
 				writeMsg(conn, parseResponseToJsonStr(response))
 				continue
@@ -604,7 +626,7 @@ func doFileHandler(conn net.Conn) {
 		}
 		//关闭文件
 		file.Close()
-		fmt.Println("文件【"+filePath+"】接收完毕，大小【", fileInfo.Size, "B】")
+		fmt.Println("文件【"+filePath+"】接收完毕，大小【", fileSizeReadable(fileInfo.Size), "】")
 
 		response.Ok = true
 		response.Message = "Ok"
@@ -615,12 +637,32 @@ func doFileHandler(conn net.Conn) {
 
 }
 
+//可读化文件大小
+func fileSizeReadable(fileSize int64) string {
+	var sizeStr string
+	//显示条选择
+	if fileSize < SizeB {
+		sizeStr = strconv.FormatInt(fileSize, 10)
+		sizeStr += " B"
+	} else if fileSize < SizeKB {
+		value := float64(fileSize) / float64(1024)
+		sizeStr += fmt.Sprintf("%.2f KB", value)
+	} else if fileSize < SizeMB {
+		value := float64(fileSize) / float64(1024*1024)
+		sizeStr += fmt.Sprintf("%.2f MB", value)
+	} else if fileSize < SizeGB {
+		value := float64(fileSize) / float64(1024*1024*1024)
+		sizeStr += fmt.Sprintf("%.2f GB", value)
+	}
+	return sizeStr
+}
+
 //以 \r 结尾
 func readMsg(conn net.Conn) string {
 	var rcvBytes []byte
 
 	tmpByte := make([]byte, 1)
-	var cnt int = 0
+	var cnt = 0
 
 	for {
 		_, err := conn.Read(tmpByte)
@@ -677,7 +719,7 @@ func doMultiFileTranServer() {
 }
 
 func doAutoBindServer() {
-	singleServer := doCreateServer("8848")
+	singleServer := doCreateServer(singleFilePort)
 	if singleServer != nil {
 		defer singleServer.Close()
 		fmt.Println("SServer Successful running in ", singleServer.Addr().String())
@@ -689,15 +731,20 @@ func doAutoBindServer() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ipStr := singleServer.Addr().String()
-		listenUDP(ipStr)
+		if singleServer != nil {
+			ipStr := singleServer.Addr().String()
+			listenUDP(ipStr)
+		} else {
+			listenUDP("nil")
+		}
+
 	}()
 
 	doMultiFileTranServer()
 }
 
 func doSpecificBindServer(ip string) {
-	singleServer := doBindServer(ip, "8848")
+	singleServer := doBindServer(ip, singleFilePort)
 	if singleServer != nil {
 		defer singleServer.Close()
 		fmt.Println("SServer Successful running in ", singleServer.Addr().String())
@@ -714,7 +761,7 @@ func doSpecificBindServer(ip string) {
 		listenUDP(ip)
 	}()
 
-	MServer := doBindServer(ip, "9949")
+	MServer := doBindServer(ip, mutilFilePort)
 	if MServer != nil {
 		defer MServer.Close()
 		doAcceptMultiFileTranServer(MServer)

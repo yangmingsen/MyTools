@@ -520,6 +520,7 @@ func syncFile(fileList []CFileInfo) {
 
 //做多文件传输
 func doSendMutliFile(path string) {
+	nowTime := time.Now()
 	fileList, err := getFileList(path)
 	if err != nil {
 		panic(err)
@@ -537,7 +538,7 @@ func doSendMutliFile(path string) {
 	}
 
 	syncDir(dirList)
-	fmt.Println("同步目录完毕...目录数", len(dirList))
+	fmt.Println("同步目录完毕...目录数【", len(dirList), "】 耗时:%v", time.Since(nowTime))
 	syncFile(fList)
 
 	//fmt.Println("同步文件完毕...文件数", len(fList))
@@ -555,11 +556,15 @@ func main() {
 	} else if argLen >= 4 {
 		doWhat := args[1]
 		if doWhat == "-r" {
-			remoteIp = args[3]
 			sendPath := args[2]
+			remoteIp = args[3]
 
 			if argLen == 5 {
 				num, _ := strconv.Atoi(args[4])
+				if num <= 0 || num > 2147483647 {
+					fmt.Println("goroutine数目错误,可根据机器性能设置[1,2147483647]")
+					return
+				}
 				goroutineNum = num
 			}
 
