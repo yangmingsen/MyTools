@@ -281,7 +281,7 @@ func listenUDP(ip string) {
 		panic(err0)
 		os.Exit(-1)
 	}
-	fmt.Println("detect server running in " + ipStr + ":8849")
+	fmt.Println("DServer Successful running in  " + ipStr + ":8849")
 
 	defer listen.Close()
 
@@ -391,6 +391,16 @@ func handleRecvFile(listener net.Listener) {
 //多文件函数
 //***********************************************************************
 
+func doBindServer(ip string, port string) (bindIp net.Listener) {
+	bindIp, err0 := net.Listen("tcp", ip+":"+port)
+	if err0 == nil {
+		return bindIp
+	} else {
+		fmt.Println("ip: ", ip, " Can't bind, [", err0, "]")
+		return nil
+	}
+}
+
 func doCreateServer(port string) net.Listener {
 	listenIp := getLocalIpv4List()
 	ipLen := len(listenIp)
@@ -399,27 +409,33 @@ func doCreateServer(port string) net.Listener {
 		return nil
 	}
 
-	var bindIp net.Listener
-	var err0 error
+	//var bindIp net.Listener
+	//var err0 error
 
 	for _, theIp := range listenIp {
 		//fmt.Println("ip=" + theIp)
-		bindIp, err0 = net.Listen("tcp", theIp+":"+port)
-		if err0 == nil {
-			break
-		} else {
-			fmt.Println("ip: ", theIp, " Can't bind, Go next!")
+
+		bindServer := doBindServer(theIp, port)
+		if bindServer != nil {
+			return bindServer
 		}
+		//bindIp, err0 = net.Listen("tcp", theIp+":"+port)
+		//if err0 == nil {
+		//	break
+		//} else {
+		//	fmt.Println("ip: ", theIp, " Can't bind, Go next!")
+		//}
 	}
+	return nil
 
-	if err0 != nil {
-		panic(err0)
-		return nil
-	}
-	ipStr := bindIp.Addr().String()
-	fmt.Println("server Successful runing in ", ipStr)
-
-	return bindIp
+	//if err0 != nil {
+	//	panic(err0)
+	//	return nil
+	//}
+	//ipStr := bindIp.Addr().String()
+	//fmt.Println("server Successful runing in ", ipStr)
+	//
+	//return bindIp
 }
 
 //发送数据
@@ -624,9 +640,8 @@ func readMsg(conn net.Conn) string {
 
 }
 
-func doMultiFileTranServer() {
-	//多文件传输建立port
-	netS := doCreateServer(mutilFilePort)
+func doAcceptMultiFileTranServer(netS net.Listener) {
+	fmt.Println("MServer Successful running in ", netS.Addr().String())
 	for {
 		conn, err := netS.Accept()
 		if err != nil {
@@ -649,25 +664,85 @@ func doMultiFileTranServer() {
 		}
 
 	}
-
 }
 
-func main() {
+func doMultiFileTranServer() {
+	//多文件传输建立port
+	netS := doCreateServer(mutilFilePort)
+	doAcceptMultiFileTranServer(netS)
+}
+
+func doAutoBindServer() {
 	singleServer := doCreateServer("8848")
 	defer singleServer.Close()
+	fmt.Println("SServer Successful running in ", singleServer.Addr().String())
+	if singleServer == nil {
+		os.Exit(-1)
+	}
+	wg.Add(1)
+	go handleRecvFile(singleServer)
 
 	//do udp fun
 	wg.Add(1)
-	//接收文件
 	go func() {
 		defer wg.Done()
 		ipStr := singleServer.Addr().String()
 		listenUDP(ipStr)
 	}()
 
+	doMultiFileTranServer()
+}
+
+func doSpecificBindServer(ip string) {
+	singleServer := doBindServer(ip, "8848")
+	defer singleServer.Close()
+	fmt.Println("SServer Successful running in ", singleServer.Addr().String())
+	if singleServer == nil {
+		os.Exit(-1)
+	}
 	wg.Add(1)
 	go handleRecvFile(singleServer)
 
-	doMultiFileTranServer()
+	//do udp fun
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		listenUDP(ip)
+	}()
+
+	MServer := doBindServer(ip, "9949")
+	doAcceptMultiFileTranServer(MServer)
+
+}
+
+func doHelp() {
+	fmt.Println("args must be => yrecv")
+	fmt.Println("args must be => yrecv -b 本地监听ip")
+}
+
+func main() {
+	args := os.Args
+	argLen := len(args)
+
+	if argLen == 1 {
+		doAutoBindServer()
+	} else if argLen > 1 {
+		doWhat := args[1]
+		if doWhat == "-b" {
+			if argLen == 3 {
+				ip := args[2]
+				doSpecificBindServer(ip)
+			} else {
+				doHelp()
+			}
+
+		} else if doWhat == "-h" {
+			doHelp()
+		} else {
+			doHelp()
+		}
+	}
+
 	wg.Wait()
+
 }
