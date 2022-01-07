@@ -28,6 +28,8 @@ const (
 	GB = 4
 )
 
+var debug bool
+
 //多文件变量
 //======================================================================
 type CFileInfo struct {
@@ -272,7 +274,7 @@ func listenUDP(ip string) {
 	var listen *net.UDPConn
 	var err0 error
 	var nr []byte
-	var ipStr string
+	ipStr := ip
 
 	if ip != "nil" {
 		if strings.Contains(ip, ":") {
@@ -460,6 +462,14 @@ func doCreateServer(port string) net.Listener {
 	return nil
 }
 
+func writeByte(conn net.Conn, bytes []byte) {
+	_, err := conn.Write(bytes)
+
+	if err != nil {
+		panic(err)
+	}
+}
+
 //发送数据
 func writeMsg(conn net.Conn, msg string) {
 	sendMsg := []byte(msg + msgCloseFlag)
@@ -537,7 +547,7 @@ func doDirHandler(conn net.Conn) {
 	writeMsg(conn, parseResponseToJsonStr(response))
 
 	//关闭连接
-	conn.Close()
+	defer conn.Close()
 
 	fmt.Println("目录建立完毕....")
 }
@@ -545,6 +555,8 @@ func doDirHandler(conn net.Conn) {
 //
 func doFileHandler(conn net.Conn) {
 	defer wg.Done()
+	//准备断点续传（如果大于25M的文件采取该行为)
+	//largeSize := int64(26214400)// 25B*1024*1024 => 26214400B =>25MB
 
 	for {
 		//接收文件传输标志
@@ -555,6 +567,8 @@ func doFileHandler(conn net.Conn) {
 			fmt.Println("Client传输完毕")
 			break
 		}
+		//计时开始
+		nowTime := time.Now()
 
 		//接收文件信息 fileInfo
 		fileInfo := parseStrToCFileInfo(readMsg(conn))
@@ -626,7 +640,8 @@ func doFileHandler(conn net.Conn) {
 		}
 		//关闭文件
 		file.Close()
-		fmt.Println("文件【"+filePath+"】接收完毕，大小【", fileSizeReadable(fileInfo.Size), "】")
+
+		fmt.Println("文件【"+filePath+"】接收完毕，大小【", fileSizeReadable(fileInfo.Size), "】，耗时:【%v】", time.Since(nowTime))
 
 		response.Ok = true
 		response.Message = "Ok"
@@ -718,6 +733,10 @@ func doMultiFileTranServer() {
 
 }
 
+//服务自动绑定
+//
+//含单文件传输服务和多文件传输服务
+//
 func doAutoBindServer() {
 	singleServer := doCreateServer(singleFilePort)
 	if singleServer != nil {
@@ -772,6 +791,12 @@ func doSpecificBindServer(ip string) {
 func doHelp() {
 	fmt.Println("args must be => yrecv")
 	fmt.Println("args must be => yrecv -b 本地监听ip")
+}
+
+//打印
+func gLog(a ...interface{}) (n int, err error) {
+
+	return fmt.Println(a)
 }
 
 func main() {

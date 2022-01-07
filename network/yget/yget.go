@@ -134,6 +134,12 @@ func httpGet(url string) (result string, err error) {
 	b = float64(contentLen)
 	for {
 		n, err2 := resp.Body.Read(buf)
+
+		nowSize += int64(n)
+		a = float64(nowSize) //更新a值
+
+		file.Write(buf[:n]) //向文件中写入数据
+
 		if n == 0 {
 			fmt.Println("get ok")
 			break
@@ -142,11 +148,6 @@ func httpGet(url string) (result string, err error) {
 			err = err2
 			return
 		}
-
-		nowSize += int64(n)
-		a = float64(nowSize) //更新a值
-
-		file.Write(buf[:n]) //向文件中写入数据
 	}
 
 	wg.Wait()
